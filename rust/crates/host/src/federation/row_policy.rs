@@ -264,6 +264,29 @@ pub async fn row_scope_for(
     }
 }
 
+/// Does `caller` read every row of `source` despite its enforced row policy? True for an extension
+/// acting as itself (its own background work, no person behind it) that holds exactly
+/// `data:<table>:read` for the policy's entity table. The grant is `requested ∩ admin_approved` at
+/// install (publishing is admin-only, `builtin_roles.rs` admin bundle), so an admin chose it. Reads
+/// only: the query path asks this; schema, sample, export, mirror, writes and migrate stay narrowed.
+/// A derived (on-behalf-of) call reads with its owner's scope. Exact string match: `data:*:read` or
+/// `*` does not lift.
+pub(super) async fn extension_reads_all(
+    node: &Node,
+    caller: &Principal,
+    ws: &str,
+    source: &str,
+) -> Result<bool, FederationError> {
+    if super::owned::extension_of(caller).is_none() {
+        return Ok(false);
+    }
+    let Some(rec) = get(&node.store, ws, source).await? else {
+        return Ok(false);
+    };
+    let cap = format!("data:{}:read", rec.entity_table);
+    Ok(rec.enforce && caller.caps().iter().any(|c| *c == cap))
+}
+
 /// Is `caller` restricted on `source`? For verbs that cannot be narrowed and so must refuse.
 pub async fn restricted(
     node: &Node,

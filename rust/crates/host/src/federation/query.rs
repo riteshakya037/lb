@@ -63,7 +63,11 @@ pub async fn federation_query<L: Launcher>(
     // The scope is resolved HERE from server state and rides the child input (so it is also part of
     // the child's result-cache key). No enforced policy / an unrestricted caller → `None`, and the
     // input is byte-for-byte what it was.
-    let row_scope = super::row_policy::row_scope_for(node, caller, ws, source).await?;
+    let row_scope = if super::row_policy::extension_reads_all(node, caller, ws, source).await? {
+        None
+    } else {
+        super::row_policy::row_scope_for(node, caller, ws, source).await?
+    };
 
     // net:* — refuse, opaque, if the source's endpoint is not in the admin-approved grant.
     enforce_endpoint(&node.store, ws, &ds.endpoint).await?;

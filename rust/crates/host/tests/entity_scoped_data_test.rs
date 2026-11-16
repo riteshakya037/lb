@@ -574,3 +574,39 @@ async fn insights_cases_and_raw_reads_follow_the_same_scope() {
     .await
     .is_err());
 }
+
+/// An extension acting as itself reads every site when its grant holds `data:site:read`: reads only.
+/// A derived call, an extension without the cap, and every non-read verb stay narrowed.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_extension_holding_data_read_reads_every_site_but_only_reads() {
+    let node = setup("an_extension_holding_data_read_reads_every_site", true).await;
+    let total = "SELECT SUM(r.v) FROM readings r JOIN point_meta_tags t ON t.host_uuid = r.host_uuid AND t.point_uuid = r.point_uuid AND t.key = 'siteRef'";
+    let q = json!({"source": "esr", "sql": total});
+    let caps = ["mcp:federation.query:call", "mcp:federation.schema:call"];
+
+    // (a) with the cap: everything.
+    let with = principal("ext:a", &[caps[0], caps[1], "data:site:read"]);
+    let out = call(&node, &with, "federation.query", q.clone())
+        .await
+        .unwrap();
+    assert_eq!(first_number(&out), 1010.0, "{out}");
+
+    // (b) without it: narrowed to nothing (no menu).
+    let without = principal("ext:b", &caps);
+    let out = call(&node, &without, "federation.query", q.clone())
+        .await
+        .unwrap();
+    assert_ne!(first_number(&out), 1010.0, "{out}");
+
+    // (c) derived for the restricted member: still the member's scope, not the extension's.
+    let derived = member().derive("ext:c", vec![caps[0].into(), "data:site:read".into()]);
+    let out = call(&node, &derived, "federation.query", q).await.unwrap();
+    assert_ne!(first_number(&out), 1010.0, "{out}");
+
+    // (d) a verb that cannot be narrowed is still refused for the extension holding the cap.
+    assert!(
+        call(&node, &with, "federation.schema", json!({"source": "esr"}))
+            .await
+            .is_err()
+    );
+}

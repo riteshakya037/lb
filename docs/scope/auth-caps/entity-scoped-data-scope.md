@@ -144,6 +144,19 @@ is exempt, and nothing else:
 - **Resource use.** Allow-listed set-returning functions (`generate_series`, `repeat`) are unbounded;
   a `statement_timeout` on the datasource DSN is the backstop, not the rewrite.
 
+## Extensions acting as themselves
+
+An extension acting as itself (its own background work, `ext:<id>` with no person behind the call)
+reads every row of a source whose enforced policy entity table it holds `data:<table>:read` for.
+A background pass has no person whose menus or grants could scope it, so before this it read nothing
+past an enforced row policy. The grant is `requested ∩ admin_approved` at install, so it is opt-in
+per install: an admin chose it.
+
+Reads only, and only `federation.query`. Schema, sample, export, mirror, writes and migrate stay
+narrowed or refused as before. A derived (on-behalf-of) extension call reads with its owner's scope,
+and a person holding the same cap string is not lifted by it. The match is the exact string, so
+`data:*:read` or `*` does not lift.
+
 ## Test plan (real store, no mocks)
 - Rewriter attack suite: aliases, CTE shadowing, recursive CTE, subqueries (WHERE/SELECT/LATERAL),
   UNION, `query_to_xml`, `set_config`, `current_setting`, `dblink`, `pg_catalog`,
